@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { User as UserType } from '../types';
+import axios from 'axios';
 
 interface RegisterProps {
-  onRegister: (userData: UserType, aadhaarImage: File | null) => void;
+  onRegister: (userData: UserType, aadhaarImage: File | null, isOtpVerified: boolean) => void;
   onSwitchToLogin: () => void;
 }
 
@@ -30,6 +31,9 @@ const Register: React.FC<RegisterProps> = ({ onRegister, onSwitchToLogin }) => {
     reAppeal: 'No',
   });
   const [aadhaarImage, setAadhaarImage] = useState<File | null>(null);
+  const [otp, setOtp] = useState('');
+  const [isOtpVerified, setIsOtpVerified] = useState(false);
+  const [resendTimer, setResendTimer] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -43,13 +47,80 @@ const Register: React.FC<RegisterProps> = ({ onRegister, onSwitchToLogin }) => {
     }
   };
 
+  const sendOtp = async () => {
+    if (!user.userEmailID) {
+      setError('Please enter an email address');
+      return;
+    }
+    try {
+      const response = await axios.post(`http://192.168.1.2:8082/kdr/otp/send?email=${encodeURIComponent(user.userEmailID)}`, null, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (response.data === 'OTP sent successfully') {
+        setResendTimer(30); // Start 30-second timer
+        setError(null);
+        const interval = setInterval(() => {
+          setResendTimer((prev) => (prev > 0 ? prev - 1 : 0));
+          if (resendTimer === 0) clearInterval(interval);
+        }, 1000);
+      } else {
+        setError('Failed to send OTP');
+      }
+    } catch (error) {
+      setError('Failed to send OTP: ' + (error.response ? error.response.data : error.message));
+    }
+  };
+
+  const verifyOtp = async () => {
+    if (!otp) {
+      setError('Please enter the OTP');
+      return;
+    }
+    try {
+      const response = await axios.post('http://192.168.1.2:8082/kdr/otp/verify', { email: user.userEmailID, otp }, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (response.data === 'OTP Verified Successfully!') {
+        setIsOtpVerified(true);
+        setError(null);
+      } else {
+        setError('Invalid or expired OTP');
+        setIsOtpVerified(false);
+      }
+    } catch (error) {
+      setError('OTP verification failed: ' + (error.response ? error.response.data : error.message));
+      setIsOtpVerified(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (resendTimer > 0) return;
+    try {
+      const response = await axios.post(`http://192.168.1.2:8082/kdr/otp/resend?email=${encodeURIComponent(user.userEmailID)}`, null, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (response.data === 'OTP resent successfully') {
+        setResendTimer(30); // Reset timer to 30 seconds
+        setError(null);
+        const interval = setInterval(() => {
+          setResendTimer((prev) => (prev > 0 ? prev - 1 : 0));
+          if (resendTimer === 0) clearInterval(interval);
+        }, 1000);
+      } else {
+        setError('Failed to resend OTP');
+      }
+    } catch (error) {
+      setError('Failed to resend OTP: ' + (error.response ? error.response.data : error.message));
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!user.fullName || !user.userEmailID || !user.phoneNumber || !user.userAddress || !user.village || !user.pincode || !user.userPassword) {
       setError('All fields except optional ones are required');
       return;
     }
-    onRegister(user, aadhaarImage);
+    onRegister(user, aadhaarImage, isOtpVerified);
   };
 
   return (
@@ -133,9 +204,44 @@ const Register: React.FC<RegisterProps> = ({ onRegister, onSwitchToLogin }) => {
             onChange={handleImageChange}
             className="w-full p-2 border rounded"
           />
+          <div>
+            <input
+              type="text"
+              value={otp}
+              onChange={(e) => setOtp(e.target.value)}
+              placeholder="Enter OTP"
+              className="w-full p-2 border rounded mb-2"
+            />
+            <button
+              type="button"
+              onClick={sendOtp}
+              className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700 mb-2"
+            >
+              Send OTP
+            </button>
+            <button
+              type="button"
+              onClick={verifyOtp}
+              className="w-full bg-green-600 text-white p-2 rounded hover:bg-green-700 mb-2"
+            >
+              Verify OTP
+            </button>
+            <button
+              type="button"
+              onClick={handleResendOtp}
+              disabled={resendTimer > 0}
+              className="w-full text-blue-600 hover:underline mt-2 disabled:text-gray-400"
+            >
+              Resend OTP {resendTimer > 0 ? `(${resendTimer}s)` : ''}
+            </button>
+          </div>
           {error && <p className="text-red-500 text-sm">{error}</p>}
-          <button type="submit" className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700">
-            Register
+          <button
+            type="submit"
+            disabled={!isOtpVerified}
+            className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            Submit
           </button>
         </form>
         <p className="mt-4 text-center">

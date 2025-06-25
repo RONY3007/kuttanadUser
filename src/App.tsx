@@ -73,9 +73,13 @@ function App() {
     setCurrentView('login');
   };
 
-  const handleRegister = async (userData: UserType, aadhaarImage: File | null) => {
+  const handleRegister = async (userData: UserType, aadhaarImage: File | null, isOtpVerified: boolean) => {
     if (!aadhaarImage) {
       setError('Aadhaar image is required');
+      return;
+    }
+    if (!isOtpVerified) {
+      setError('Please verify OTP before submitting');
       return;
     }
 
@@ -84,12 +88,13 @@ function App() {
     formData.append('aadhaarImage', aadhaarImage);
 
     try {
-      console.log('Sending registration request:', JSON.stringify(userData, null, 2)); // Log user data
+      console.log('Sending registration request:', JSON.stringify(userData, null, 2));
       const response = await api.post('/user/user-register', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       console.log('Registration response:', response.data);
-      // Login after registration to get token and user
+
+      // Login after successful registration
       const loginResponse = await api.post('/user/user-login', {
         email: userData.userEmailID,
         password: userData.userPassword,
@@ -101,7 +106,7 @@ function App() {
       setCurrentView('dashboard');
       setError(null);
     } catch (error) {
-      setError('Registration failed. Please try again.');
+      setError('Registration failed. Please try again. ' + (error.response ? error.response.data : error.message));
       console.error('Registration error:', error.response ? error.response.data : error.message);
     }
   };
